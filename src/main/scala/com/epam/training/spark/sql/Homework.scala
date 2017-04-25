@@ -1,5 +1,8 @@
 package com.epam.training.spark.sql
 
+import java.sql.Date
+import java.time.LocalDate
+
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.hive.HiveContext
@@ -58,15 +61,49 @@ object Homework {
 
   }
 
-  def readCsvData(sqlContext: HiveContext, rawDataPath: String): DataFrame = ???
+  def readCsvData(sqlContext: HiveContext, rawDataPath: String): DataFrame = {
+    sqlContext.read
+      .option("header", "true")
+      .option("delimiter", ";")
+      .schema(Constants.CLIMATE_TYPE)
+      .csv(rawDataPath)
+  }
 
-  def findErrors(climateDataFrame: DataFrame): Array[Row] = ???
+  def findErrors(climateDataFrame: DataFrame): Array[Row] = {
+    val isEmpty = udf((text: String) =>  if (text == null || text.isEmpty) 1 else 0)
+    climateDataFrame.select(sum(isEmpty(col("observation_date"))),
+      sum(isEmpty(col("mean_temperature"))),
+      sum(isEmpty(col("max_temperature"))),
+      sum(isEmpty(col("min_temperature"))),
+      sum(isEmpty(col("precipitation_mm"))),
+      sum(isEmpty(col("precipitation_type"))),
+      sum(isEmpty(col("sunshine_hours")))).collect()
+  }
 
-  def averageTemperature(climateDataFrame: DataFrame, monthNumber: Int, dayOfMonth: Int): DataFrame = ???
+  def averageTemperature(climateDataFrame: DataFrame, monthNumber: Int, dayOfMonth: Int): DataFrame = {
+    climateDataFrame.select(col("mean_temperature"))
+      .where(month(col("observation_date")) === monthNumber)
+      .where(dayofmonth(col("observation_date")) === dayOfMonth)
+  }
 
-  def predictTemperature(climateDataFrame: DataFrame, monthNumber: Int, dayOfMonth: Int): Double = ???
+  def predictTemperature(climateDataFrame: DataFrame, monthNumber: Int, dayOfMonth: Int): Double = {
+    val observationDateInRange = udf((observationDate: Date) => dateInRange(observationDate.toLocalDate, monthNumber, dayOfMonth))
+    climateDataFrame
+      .where(observationDateInRange(col("observation_date")))
+      .select(avg(col("mean_temperature")))
+      .first()
+      .getDouble(0)
+  }
 
+  private def dateInRange(observationDate: LocalDate, month: Int, dayOfMonth: Int): Boolean = {
+    dateMatches(observationDate, month, dayOfMonth) ||
+      dateMatches(observationDate.plusDays(1), month, dayOfMonth) ||
+      dateMatches(observationDate.minusDays(1), month, dayOfMonth)
+  }
 
+  private def dateMatches(observationDate: LocalDate, month: Int, dayOfMonth: Int): Boolean = {
+    month == observationDate.getMonthValue && dayOfMonth == observationDate.getDayOfMonth
+  }
 }
 
 
